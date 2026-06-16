@@ -1,0 +1,17 @@
+node_modules/
+build/
+dist/
+coverage/
+__pycache__/
+*.py[cod]
+.DS_Store
+*.log
+.env*
+!.env.example
+
+.vercel
+
+# Large binary data files — seeded into MongoDB separately
+*.xlsb
+*.xlsx
+*.xls
