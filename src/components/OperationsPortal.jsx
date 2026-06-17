@@ -104,6 +104,7 @@ export default function OperationsPortal({
   setOrders,
   addActivity,
   onRefreshActivities,
+  onRefreshOrders = () => {},
   tab,
   setTab,
   onSwitchToVendorPortal,

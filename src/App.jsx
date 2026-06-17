@@ -290,6 +290,7 @@ export default function App() {
               setOrders={setWorkflowOrders}
               addActivity={addWorkflowActivity}
               onRefreshActivities={refreshDashboardActivities}
+              onRefreshOrders={loadDashboard}
               tab={operationsTab}
               setTab={setOperationsTab}
               onSwitchToVendorPortal={openVendorPortal}
