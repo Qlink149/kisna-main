@@ -280,7 +280,7 @@ export default function OperationsPortal({
               ? "WhatsApp not configured — add GUPSHUP_API_KEY, GUPSHUP_SOURCE and template IDs in backend/.env"
               : reason
           );
-          return;
+          return { ok: false, skipped: true, reason };
         }
         const sent = (res.messages || []).filter((m) => m.ok);
         const failed = (res.messages || []).filter((m) => m.ok === false);
@@ -292,8 +292,13 @@ export default function OperationsPortal({
           const detail = failed.map((m) => `${m.recipient}: ${m.error || m.body?.message || "failed"}`).join("; ");
           showToast(`WhatsApp failed - ${detail}`);
         }
+        return { ok: sent.length > 0 && failed.length === 0, sent, failed };
       })
-      .catch((err) => showToast(err instanceof Error ? err.message : "WhatsApp notification could not be sent."));
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : "WhatsApp notification could not be sent.";
+        showToast(message);
+        return { ok: false, error: message };
+      });
   };
 
   // Success Notification Dialog/Toast
@@ -340,7 +345,7 @@ export default function OperationsPortal({
   const qcChecklistComplete = isQcChecklistComplete(qcChecklist);
 
   // Handlers
-  const handleAssignVendorSubmit = () => {
+  const handleAssignVendorSubmit = async () => {
     if (!assigningOrder || !selectedVendorId) return;
     if (!assignmentStoreNumber || !assignmentVendorNumber) {
       showToast("Enter store and vendor WhatsApp numbers before assignment.");
@@ -368,7 +373,7 @@ export default function OperationsPortal({
       )
     );
 
-    sendWhatsApp("vendor_assign", assigningOrder, {
+    const whatsappResult = await sendWhatsApp("vendor_assign", assigningOrder, {
       store: assignmentStoreNumber,
       vendor: assignmentVendorNumber,
     }, {
@@ -384,7 +389,9 @@ export default function OperationsPortal({
       { category: "Assignment", vendorName: vendor.name, orderId: assigningOrder.id }
     );
 
-    showToast(`Order ${assigningOrder.id} assigned to ${vendor.name}. Opening vendor portal…`);
+    if (whatsappResult?.ok) {
+      showToast(`Order ${assigningOrder.id} assigned to ${vendor.name}. WhatsApp sent.`);
+    }
     onSwitchToVendorPortal?.(vendor.name, "dashboard");
     setAssigningOrder(null);
     setSelectedVendorId("");
@@ -395,7 +402,7 @@ export default function OperationsPortal({
     setAssignmentVendorNumber("");
   };
 
-  const handleQCPass = (orderId) => {
+  const handleQCPass = async (orderId) => {
     const order = workflowOrdersSource.find((o) => o.id === orderId);
     const storePhone = qcStoreNumber || order?.storeContactNumber || order?.customerPhone || "";
     const vendorPhone = qcVendorNumber || order?.vendorContactNumber || "";
@@ -425,7 +432,7 @@ export default function OperationsPortal({
       )
     );
 
-    sendWhatsApp("qc_passed", order || { id: orderId }, {
+    const whatsappResult = await sendWhatsApp("qc_passed", order || { id: orderId }, {
       store: storePhone,
       vendor: vendorPhone,
     }, { vendorName: order?.assignedVendor || order?.complexity || "" });
@@ -437,7 +444,9 @@ export default function OperationsPortal({
       { category: "QC", vendorName: order?.assignedVendor || order?.complexity || "", orderId }
     );
 
-    showToast(`Order ${orderId} passed QC. Moved to Payment & Dispatch. WhatsApp queued.`);
+    if (whatsappResult?.ok) {
+      showToast(`Order ${orderId} passed QC. WhatsApp sent.`);
+    }
     loadPaymentTabOrders();
     onRefreshOrders?.();
     setReviewingOrder(null);
@@ -445,7 +454,7 @@ export default function OperationsPortal({
     setQcVendorNumber("");
   };
 
-  const handleQCFail = (orderId) => {
+  const handleQCFail = async (orderId) => {
     const order = workflowOrdersSource.find((o) => o.id === orderId);
     const storePhone = qcStoreNumber || order?.storeContactNumber || order?.customerPhone || "";
     const vendorPhone = qcVendorNumber || order?.vendorContactNumber || "";
@@ -473,7 +482,7 @@ export default function OperationsPortal({
       )
     );
 
-    sendWhatsApp("qc_failed", order || { id: orderId }, {
+    const whatsappResult = await sendWhatsApp("qc_failed", order || { id: orderId }, {
       store: storePhone,
       vendor: vendorPhone,
     }, {
@@ -488,7 +497,9 @@ export default function OperationsPortal({
       { category: "QC", vendorName: order?.assignedVendor || order?.complexity || "", orderId }
     );
 
-    showToast(`Order ${orderId} failed QC. Vendor notified via WhatsApp.`);
+    if (whatsappResult?.ok) {
+      showToast(`Order ${orderId} failed QC. WhatsApp sent.`);
+    }
     onRefreshOrders?.();
     setReviewingOrder(null);
     setQcStoreNumber("");
@@ -503,7 +514,7 @@ export default function OperationsPortal({
     setPaymentVendorNumber(order.vendorContactNumber || "");
   };
 
-  const handleConfirmPaymentSubmit = () => {
+  const handleConfirmPaymentSubmit = async () => {
     if (!paymentConfirmOrder) return;
     if (!paymentStoreNumber && !paymentVendorNumber) {
       showToast("Enter store and/or vendor WhatsApp numbers before dispatching.");
@@ -529,7 +540,7 @@ export default function OperationsPortal({
       )
     );
 
-    sendWhatsApp(
+    const whatsappResult = await sendWhatsApp(
       "payment_dispatched",
       paymentConfirmOrder,
       { store: paymentStoreNumber, vendor: paymentVendorNumber },
@@ -542,7 +553,9 @@ export default function OperationsPortal({
       "success"
     );
 
-    showToast(`Payment confirmed! Order ${orderId} dispatched via BlueDart.`);
+    if (whatsappResult?.ok) {
+      showToast(`Payment confirmed. Order ${orderId} dispatched and WhatsApp sent.`);
+    }
     setPaymentConfirmOrder(null);
     setPaymentStoreNumber("");
     setPaymentVendorNumber("");
