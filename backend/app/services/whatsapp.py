@@ -54,8 +54,28 @@ def normalize_phone(number: str) -> str:
     return digits
 
 
+def mask_phone(number: str | None) -> str:
+    digits = re.sub(r"\D", "", number or "")
+    if not digits:
+        return ""
+    if len(digits) <= 4:
+        return "*" * len(digits)
+    return f"{digits[:2]}***{digits[-4:]}"
+
+
 def _configured() -> bool:
     return bool(settings.gupshup_key and settings.GUPSHUP_SOURCE)
+
+
+def _config_snapshot() -> dict[str, Any]:
+    return {
+        "has_key": bool(settings.gupshup_key),
+        "has_source": bool(settings.GUPSHUP_SOURCE),
+        "app_name": settings.GUPSHUP_APP_NAME,
+        "has_store_template": bool(settings.store_template_id),
+        "has_vendor_template": bool(settings.vendor_template_id),
+        "param_mode": settings.GUPSHUP_TEMPLATE_PARAM_MODE,
+    }
 
 
 def build_message(event: str, context: dict[str, Any]) -> str:
@@ -108,6 +128,7 @@ def _gupshup_error(status_code: int, body: Any) -> str | None:
 
 async def _send_text(destination: str, text: str) -> dict:
     if not _configured():
+        logger.warning("WhatsApp text skipped destination=%s config=%s", mask_phone(destination), _config_snapshot())
         return {"skipped": True, "reason": "Gupshup not configured"}
 
     payload = {
@@ -123,18 +144,26 @@ async def _send_text(destination: str, text: str) -> dict:
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
+        logger.info("Gupshup text send start destination=%s", mask_phone(destination))
         response = await client.post(GUPSHUP_TEXT_URL, data=payload, headers=headers)
         body = _parse_body(response)
         err = _gupshup_error(response.status_code, body)
         if err:
-            logger.error("Gupshup text error [%s] %s: %s", destination, response.status_code, body)
+            logger.error(
+                "Gupshup text error destination=%s status=%s body=%s",
+                mask_phone(destination), response.status_code, body,
+            )
             return {"ok": False, "status": response.status_code, "body": body, "error": err}
-        logger.info("Gupshup text OK [%s]: %s", destination, body)
+        logger.info("Gupshup text OK destination=%s status=%s body=%s", mask_phone(destination), response.status_code, body)
         return {"ok": True, "body": body}
 
 
 async def _send_template(destination: str, template_id: str, params: list[str]) -> dict:
     if not _configured():
+        logger.warning(
+            "WhatsApp template skipped destination=%s template_present=%s config=%s",
+            mask_phone(destination), bool(template_id), _config_snapshot(),
+        )
         return {"skipped": True, "reason": "Gupshup not configured"}
 
     payload = {
@@ -150,33 +179,48 @@ async def _send_template(destination: str, template_id: str, params: list[str]) 
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
+        logger.info(
+            "Gupshup template send start destination=%s template=%s params_count=%s config=%s",
+            mask_phone(destination), template_id, len(params), _config_snapshot(),
+        )
         response = await client.post(GUPSHUP_TEMPLATE_URL, data=payload, headers=headers)
         body = _parse_body(response)
         err = _gupshup_error(response.status_code, body)
         if err:
             logger.error(
-                "Gupshup template error [%s] template=%s status=%s: %s",
-                destination, template_id, response.status_code, body,
+                "Gupshup template error destination=%s template=%s status=%s body=%s",
+                mask_phone(destination), template_id, response.status_code, body,
             )
             return {"ok": False, "status": response.status_code, "body": body, "error": err}
-        logger.info("Gupshup template OK [%s]: %s", destination, body)
+        logger.info(
+            "Gupshup template OK destination=%s template=%s status=%s body=%s",
+            mask_phone(destination), template_id, response.status_code, body,
+        )
         return {"ok": True, "body": body}
 
 
 async def send_to_phone(destination: str, event: str, context: dict[str, Any], recipient: str) -> dict:
     phone = normalize_phone(destination)
     if not phone or len(phone) < 10:
+        logger.warning(
+            "WhatsApp invalid phone recipient=%s raw=%s normalized=%s",
+            recipient, mask_phone(destination), mask_phone(phone),
+        )
         return {"ok": False, "error": f"Invalid phone number: {destination!r}"}
 
     template_id = settings.template_for(event, recipient)
+    logger.info(
+        "WhatsApp send_to_phone event=%s recipient=%s phone=%s template_present=%s param_mode=%s",
+        event, recipient, mask_phone(phone), bool(template_id), settings.GUPSHUP_TEMPLATE_PARAM_MODE,
+    )
     if template_id:
         params = build_template_params(event, context)
         result = await _send_template(phone, template_id, params)
         if result.get("ok"):
             return result
         logger.warning(
-            "Template failed for %s (event=%s error=%s); falling back to text",
-            phone, event, result.get("error"),
+            "Template failed phone=%s event=%s error=%s; falling back to text",
+            mask_phone(phone), event, result.get("error"),
         )
 
     text = build_message(event, context)
@@ -190,6 +234,10 @@ async def notify_event(
     vendor_phone: str | None = None,
     context: dict[str, Any],
 ) -> dict:
+    logger.info(
+        "WhatsApp notify_event start event=%s store=%s vendor=%s config=%s",
+        event, mask_phone(store_phone), mask_phone(vendor_phone), _config_snapshot(),
+    )
     results: dict[str, Any] = {"event": event, "messages": []}
     if store_phone:
         result = await send_to_phone(store_phone, event, context, "store")
@@ -200,4 +248,18 @@ async def notify_event(
     if not results["messages"]:
         results["skipped"] = True
         results["reason"] = "No phone numbers provided"
+    logger.info(
+        "WhatsApp notify_event done event=%s result_summary=%s",
+        event,
+        [
+            {
+                "recipient": message.get("recipient"),
+                "phone": mask_phone(message.get("phone")),
+                "ok": message.get("ok"),
+                "skipped": message.get("skipped"),
+                "error": message.get("error"),
+            }
+            for message in results.get("messages", [])
+        ],
+    )
     return results
