@@ -25,7 +25,7 @@ class WhatsAppNotifyRequest(BaseModel):
 
 @router.post("/notify")
 async def send_notification(payload: WhatsAppNotifyRequest):
-    logger.info(
+    logger.warning(
         "WhatsApp notify request event=%s order=%s store=%s vendor=%s",
         payload.event,
         payload.orderId,
@@ -39,7 +39,7 @@ async def send_notification(payload: WhatsAppNotifyRequest):
         vendor_phone=payload.vendorPhone,
         context=context,
     )
-    logger.info(
+    logger.warning(
         "WhatsApp notify response event=%s order=%s messages=%s skipped=%s reason=%s",
         payload.event,
         payload.orderId,

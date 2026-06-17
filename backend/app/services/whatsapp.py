@@ -144,7 +144,7 @@ async def _send_text(destination: str, text: str) -> dict:
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        logger.info("Gupshup text send start destination=%s", mask_phone(destination))
+        logger.warning("Gupshup text send start destination=%s", mask_phone(destination))
         response = await client.post(GUPSHUP_TEXT_URL, data=payload, headers=headers)
         body = _parse_body(response)
         err = _gupshup_error(response.status_code, body)
@@ -154,7 +154,7 @@ async def _send_text(destination: str, text: str) -> dict:
                 mask_phone(destination), response.status_code, body,
             )
             return {"ok": False, "status": response.status_code, "body": body, "error": err}
-        logger.info("Gupshup text OK destination=%s status=%s body=%s", mask_phone(destination), response.status_code, body)
+        logger.warning("Gupshup text OK destination=%s status=%s body=%s", mask_phone(destination), response.status_code, body)
         return {"ok": True, "body": body}
 
 
@@ -179,7 +179,7 @@ async def _send_template(destination: str, template_id: str, params: list[str]) 
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        logger.info(
+        logger.warning(
             "Gupshup template send start destination=%s template=%s params_count=%s config=%s",
             mask_phone(destination), template_id, len(params), _config_snapshot(),
         )
@@ -192,7 +192,7 @@ async def _send_template(destination: str, template_id: str, params: list[str]) 
                 mask_phone(destination), template_id, response.status_code, body,
             )
             return {"ok": False, "status": response.status_code, "body": body, "error": err}
-        logger.info(
+        logger.warning(
             "Gupshup template OK destination=%s template=%s status=%s body=%s",
             mask_phone(destination), template_id, response.status_code, body,
         )
@@ -209,7 +209,7 @@ async def send_to_phone(destination: str, event: str, context: dict[str, Any], r
         return {"ok": False, "error": f"Invalid phone number: {destination!r}"}
 
     template_id = settings.template_for(event, recipient)
-    logger.info(
+    logger.warning(
         "WhatsApp send_to_phone event=%s recipient=%s phone=%s template_present=%s param_mode=%s",
         event, recipient, mask_phone(phone), bool(template_id), settings.GUPSHUP_TEMPLATE_PARAM_MODE,
     )
@@ -234,7 +234,7 @@ async def notify_event(
     vendor_phone: str | None = None,
     context: dict[str, Any],
 ) -> dict:
-    logger.info(
+    logger.warning(
         "WhatsApp notify_event start event=%s store=%s vendor=%s config=%s",
         event, mask_phone(store_phone), mask_phone(vendor_phone), _config_snapshot(),
     )
@@ -248,7 +248,7 @@ async def notify_event(
     if not results["messages"]:
         results["skipped"] = True
         results["reason"] = "No phone numbers provided"
-    logger.info(
+    logger.warning(
         "WhatsApp notify_event done event=%s result_summary=%s",
         event,
         [

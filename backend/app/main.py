@@ -1,10 +1,14 @@
 from contextlib import asynccontextmanager
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import connect_db, close_db
 from app.api.routes import orders, vendors, activities, analytics, whatsapp, demo
+
+logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager
