@@ -74,6 +74,20 @@ def build_message(event: str, context: dict[str, Any]) -> str:
         return f"KISNA ONE update for order {safe.get('order_id', '—')}."
 
 
+def build_template_params(event: str, context: dict[str, Any]) -> list[str]:
+    if settings.GUPSHUP_TEMPLATE_PARAM_MODE.lower() == "static":
+        return []
+
+    order_id = str(context.get("orderId") or context.get("order_id") or "—")
+    vendor = str(context.get("vendorName") or context.get("vendor_name") or "—")
+    customer = str(context.get("customer") or "—")
+    design = str(context.get("designNo") or context.get("design_no") or "—")
+    remarks = str(context.get("remarks") or "—")
+    label = EVENT_LABELS.get(event, "KISNA ONE update")
+    detail = remarks if event == "qc_failed" else (design if design != "—" else vendor)
+    return [order_id, label, detail or customer]
+
+
 def _parse_body(response: httpx.Response) -> Any:
     """Try JSON first regardless of Content-Type, fall back to raw text."""
     try:
@@ -156,19 +170,12 @@ async def send_to_phone(destination: str, event: str, context: dict[str, Any], r
 
     template_id = settings.template_for(event, recipient)
     if template_id:
-        order_id = str(context.get("orderId") or context.get("order_id") or "—")
-        vendor = str(context.get("vendorName") or context.get("vendor_name") or "—")
-        customer = str(context.get("customer") or "—")
-        design = str(context.get("designNo") or context.get("design_no") or "—")
-        remarks = str(context.get("remarks") or "—")
-        label = EVENT_LABELS.get(event, "KISNA ONE update")
-        detail = remarks if event == "qc_failed" else (design if design != "—" else vendor)
-        params = [order_id, label, detail or customer]
+        params = build_template_params(event, context)
         result = await _send_template(phone, template_id, params)
-        return result
-        # Template rejected by Gupshup — fall back to plain text
+        if result.get("ok"):
+            return result
         logger.warning(
-            "Template failed for %s (event=%s error=%s) — falling back to text",
+            "Template failed for %s (event=%s error=%s); falling back to text",
             phone, event, result.get("error"),
         )
 

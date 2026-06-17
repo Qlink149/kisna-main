@@ -1,7 +1,15 @@
-import os
 from pydantic_settings import BaseSettings
+from pathlib import Path
 
-_env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env")
+_backend_dir = Path(__file__).resolve().parents[2]
+_app_dir = _backend_dir.parent
+_workspace_dir = _app_dir.parent
+_env_candidates = (
+    _backend_dir / ".env",
+    _app_dir / ".env",
+    _workspace_dir / ".env",
+)
+_env_file = next((path for path in _env_candidates if path.exists()), _env_candidates[0])
 
 
 class Settings(BaseSettings):
@@ -17,12 +25,13 @@ class Settings(BaseSettings):
     # Two WhatsApp templates — store (customer) and vendor
     GUPSHUP_STORE_TEMPLATE_ID: str = ""
     GUPSHUP_VENDOR_TEMPLATE_ID: str = ""
+    GUPSHUP_TEMPLATE_PARAM_MODE: str = "static"
     # Legacy aliases (still supported)
     CUSTOMER_NOTIFICATION_TEMPLATE_ID: str = ""
     VENDOR_NOTIFICATION_TEMPLATE_ID: str = ""
     KISNA_DAMAGE_COMPLAINT_FLOW_ID: str = ""
 
-    model_config = {"env_file": _env_file}
+    model_config = {"env_file": str(_env_file)}
 
     @property
     def gupshup_key(self) -> str:
