@@ -1450,7 +1450,7 @@ export default function OperationsPortal({
                         <th className="p-4">QC Clearance Date</th>
                         <th className="p-4">Overdue Days Limit</th>
                         <th className="p-4">Financial Status</th>
-                        <th className="p-4 text-right px-6">Dispatch Authorize</th>
+                        <th className="p-4 text-center px-6">Dispatch Authorize</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -1492,21 +1492,25 @@ export default function OperationsPortal({
                               {order.status === OrderStatus.PAYMENT_OVERDUE ? "OVERDUE LIMIT" : "PAYMENT PENDING"}
                             </span>
                           </td>
-                          <td className="p-4 text-right px-6 space-x-2">
-                            {order.status === OrderStatus.PAYMENT_OVERDUE && (
+                          <td className="p-4 px-6">
+                            <div className="ml-auto flex w-[172px] flex-col items-stretch gap-2">
+                              {order.status === OrderStatus.PAYMENT_OVERDUE && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveToInventory(order.id)}
+                                  className="h-9 w-full rounded-md bg-red-600 px-3 text-center text-[10px] font-bold uppercase leading-tight text-white transition-colors hover:bg-red-700"
+                                >
+                                  RESTOCK STOCK
+                                </button>
+                              )}
                               <button
-                                onClick={() => handleMoveToInventory(order.id)}
-                                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] rounded transition-colors"
+                                type="button"
+                                onClick={() => handleConfirmPayment(order.id)}
+                                className="min-h-11 w-full rounded-md bg-[#0D1B3E] px-3 py-2 text-center text-[10px] font-bold uppercase leading-tight text-white shadow-sm transition-all hover:bg-[#1E3A5F]"
                               >
-                                RESTOCK STOCK
+                                CONFIRM PAYMENT &amp;<br />SHIP
                               </button>
-                            )}
-                            <button
-                              onClick={() => handleConfirmPayment(order.id)}
-                              className="px-3.5 py-1.5 bg-[#0D1B3E] hover:bg-[#1E3A5F] text-white font-bold text-[10px] rounded transition-all cursor-pointer shadow-sm"
-                            >
-                              CONFIRM PAYMENT &amp; SHIP
-                            </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
