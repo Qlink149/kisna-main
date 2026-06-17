@@ -2,13 +2,13 @@ import React, { useMemo, useState } from "react";
 import { Bell, X, ShieldCheck, CreditCard, UserCheck, Truck, AlertTriangle, Info } from "lucide-react";
 
 const CATEGORY_META = {
-  QC: { label: "QC", icon: ShieldCheck, cls: "bg-blue-50 text-blue-700 border-blue-100" },
-  Payment: { label: "Payment", icon: CreditCard, cls: "bg-amber-50 text-amber-700 border-amber-100" },
-  Assignment: { label: "Assignment", icon: UserCheck, cls: "bg-violet-50 text-violet-700 border-violet-100" },
-  Dispatch: { label: "Dispatch", icon: Truck, cls: "bg-green-50 text-green-700 border-green-100" },
-  Production: { label: "Production", icon: Info, cls: "bg-slate-50 text-slate-700 border-slate-100" },
-  Alert: { label: "Alert", icon: AlertTriangle, cls: "bg-red-50 text-red-700 border-red-100" },
-  Operations: { label: "Ops", icon: Bell, cls: "bg-[#EFF4FF] text-[#0D1B3E] border-[#d1e4fb]" },
+  QC: { label: "QC", icon: ShieldCheck, cls: "bg-[#0D1B3E]/5 text-[#0D1B3E] border-[#0D1B3E]/10" },
+  Payment: { label: "Payment", icon: CreditCard, cls: "bg-[#C9A84C]/10 text-[#0D1B3E] border-[#C9A84C]/20" },
+  Assignment: { label: "Assignment", icon: UserCheck, cls: "bg-[#FDF8EC] text-[#0D1B3E] border-[#C9A84C]/15" },
+  Dispatch: { label: "Dispatch", icon: Truck, cls: "bg-[#0D1B3E]/5 text-[#0D1B3E] border-[#C9A84C]/15" },
+  Production: { label: "Production", icon: Info, cls: "bg-[#F8F9FB] text-[#0D1B3E] border-[#C6C6CF]/30" },
+  Alert: { label: "Alert", icon: AlertTriangle, cls: "bg-[#F5EDED] text-[#8B6060] border-[#E8D4D4]" },
+  Operations: { label: "Ops", icon: Bell, cls: "bg-[#EFF4FF] text-[#0D1B3E] border-[#C9A84C]/15" },
 };
 
 export function categorizeNotification(item) {
@@ -91,7 +91,7 @@ export default function NotificationPanel({
               onClick={() => setFilter(cat)}
               className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border transition-colors ${
                 filter === cat
-                  ? "bg-[#0D1B3E] text-white border-[#0D1B3E]"
+                  ? "bg-[#0D1B3E] text-[#C9A84C] border-[#0D1B3E]"
                   : "bg-white text-[#76767F] border-[#C6C6CF]/40 hover:border-[#C9A84C]/40"
               }`}
             >
@@ -153,7 +153,7 @@ export function NotificationBell({ count, onClick, className = "" }) {
     >
       <Bell className="w-4 h-4 text-[#76767F]" />
       {count > 0 && (
-        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white">
+        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-[#B89090] text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white">
           {count > 99 ? "99+" : count}
         </span>
       )}

@@ -16,6 +16,12 @@ import {
   LabelList,
 } from "recharts";
 
+const NAVY = "#0D1B3E";
+const NAVY_MID = "#1A1250";
+const GOLD = "#C9A84C";
+const GOLD_LIGHT = "#E8D4A8";
+const MUTED = "#94a3b8";
+
 function fmtNum(n) {
   return Number(n || 0).toLocaleString("en-IN");
 }
@@ -25,16 +31,50 @@ function fmtCurrencyCr(val) {
   return cr >= 1 ? `INR ${cr.toFixed(1)} Cr` : `INR ${(val / 1e5).toFixed(1)} L`;
 }
 
-function shortLabel(value, max = 24) {
-  const text = String(value || "");
-  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+function RankedQtyList({ items, barColor = GOLD }) {
+  if (!items.length) {
+    return <p className="text-sm text-[#94a3b8] py-8 text-center">No customer data</p>;
+  }
+  const maxVal = Math.max(...items.map((i) => i.value), 1);
+
+  return (
+    <div className="space-y-4">
+      {items.map((item, index) => (
+        <div key={`${item.name}-${index}`}>
+          <div className="flex items-start gap-3 mb-1.5">
+            <span className="text-[10px] font-mono font-semibold text-[#C9A84C] w-5 shrink-0 pt-0.5">
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <p
+              className="flex-1 text-[13px] font-medium text-[#0D1B3E] leading-snug break-words"
+              title={item.name}
+            >
+              {item.name}
+            </p>
+            <span className="text-sm font-semibold text-[#0D1B3E] tabular-nums shrink-0 pt-px">
+              {fmtNum(item.value)}
+            </span>
+          </div>
+          <div className="ml-8 h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-700 ease-out"
+              style={{
+                width: `${Math.max(4, (item.value / maxVal) * 100)}%`,
+                background: `linear-gradient(90deg, ${barColor} 0%, ${GOLD_LIGHT} 100%)`,
+              }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function MetricCard({ label, value, sub }) {
   return (
     <div className="bg-white border border-[#E2E8F4] rounded-2xl p-5 flex flex-col gap-1 shadow-sm">
       <p className="text-[10px] font-medium uppercase tracking-widest text-[#94a3b8]">{label}</p>
-      <p className="text-3xl md:text-4xl font-semibold text-[#1e293b] leading-tight">{value}</p>
+      <p className="text-3xl md:text-4xl font-semibold text-[#0D1B3E] leading-tight">{value}</p>
       {sub && <p className="text-xs text-[#94a3b8] font-normal">{sub}</p>}
     </div>
   );
@@ -49,46 +89,34 @@ function SectionCard({ title, children }) {
   );
 }
 
-/* ── Cohesive muted palette ── */
 const STATUS_COLORS = {
-  "Ready For Dispatch":   "#4E7BB5",
-  "Pending from Vendor":  "#C9A84C",
-  "God WIP":              "#C47A6E",
-  "GOD WIP":              "#C47A6E",
-  "Inter Store Transfer": "#8BA3BE",
+  "Ready For Dispatch": NAVY_MID,
+  "Pending from Vendor": GOLD,
+  "God WIP": NAVY,
+  "GOD WIP": NAVY,
+  "Inter Store Transfer": GOLD_LIGHT,
 };
+
+const CHART_PALETTE = [NAVY, NAVY_MID, GOLD, GOLD_LIGHT, "#3D4F6E", "#6B5A3E", "#2A3A5C", "#A89050"];
 
 const KT_COLOR_MAP = {
-  "22KT": "#C9A84C",
-  "18KT": "#4E7BB5",
-  "14KT": "#5BAFA8",
-  "09KT": "#9B8EC4",
-  STL:    "#8BA3BE",
+  "22KT": GOLD,
+  "18KT": NAVY,
+  "14KT": NAVY_MID,
+  "09KT": GOLD_LIGHT,
+  STL: "#3D4F6E",
 };
 
-const CHART_PALETTE = [
-  "#4E7BB5",
-  "#5BAFA8",
-  "#8FC49B",
-  "#C9A84C",
-  "#9B8EC4",
-  "#7CA8BF",
-  "#C4896E",
-  "#7DB8A5",
-  "#B8A84E",
-  "#A0A8C9",
-];
-
-const TICK = { fontSize: 11, fill: "#94a3b8", fontWeight: 400 };
+const TICK = { fontSize: 11, fill: MUTED, fontWeight: 400 };
 const TICK_DARK = { fontSize: 11, fill: "#475569", fontWeight: 400 };
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-white border border-[#E2E8F4] rounded-xl shadow-lg p-3 text-xs">
-      {label && <p className="font-medium text-[#1e293b] mb-1">{label}</p>}
+      {label && <p className="font-medium text-[#0D1B3E] mb-1">{label}</p>}
       {payload.map((p, i) => (
-        <p key={i} style={{ color: p.fill || p.color || "#475569" }} className="font-normal">
+        <p key={i} style={{ color: p.fill || p.color || NAVY }} className="font-normal">
           {p.name}: {fmtNum(p.value)}
         </p>
       ))}
@@ -100,26 +128,12 @@ const PieTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-white border border-[#E2E8F4] rounded-xl shadow-lg p-3 text-xs">
-      <p className="font-medium text-[#1e293b]">{payload[0].name}</p>
+      <p className="font-medium text-[#0D1B3E]">{payload[0].name}</p>
       <p className="font-normal text-[#94a3b8]">Qty: {fmtNum(payload[0].value)}</p>
       <p className="font-normal text-[#94a3b8]">{payload[0].payload.percent}%</p>
     </div>
   );
 };
-
-const CustomerAxisTick = ({ x, y, payload }) => (
-  <text
-    x={x - 10}
-    y={y}
-    textAnchor="end"
-    dominantBaseline="middle"
-    fill="#475569"
-    fontSize={11}
-    fontWeight={400}
-  >
-    {shortLabel(payload?.value, 22)}
-  </text>
-);
 
 export default function AnalyticsDashboard() {
   const [data, setData] = useState(null);
@@ -144,10 +158,10 @@ export default function AnalyticsDashboard() {
 
   if (error || !data || data.totalOrders === 0) {
     return (
-      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center">
-        <p className="font-medium text-amber-800 mb-1">Excel analytics collection is empty</p>
-        <p className="text-sm font-normal text-amber-700 mb-3">
-          Analytics data is loaded from the MongoDB excel_orders collection. Restart the API or use Reset Demo to re-seed demo data.
+      <div className="bg-[#FDF8EC] border border-[#C9A84C]/25 rounded-2xl p-6 text-center">
+        <p className="font-medium text-[#0D1B3E] mb-1">Analytics data unavailable</p>
+        <p className="text-sm font-normal text-[#76767F] mb-3">
+          Home dashboard reads live data from MongoDB. Restart the API if the collection is empty.
         </p>
       </div>
     );
@@ -165,13 +179,13 @@ export default function AnalyticsDashboard() {
     name: s.status,
     value: s.qty,
     percent: totalStatusQty > 0 ? ((s.qty / totalStatusQty) * 100).toFixed(1) : "0",
-    color: STATUS_COLORS[s.status] || "#A0A8C9",
+    color: STATUS_COLORS[s.status] || NAVY_MID,
   }));
 
   const karatageData = karatage.map((k) => ({
     name: k.kt,
     value: k.count,
-    fill: KT_COLOR_MAP[k.kt] || "#7CA8BF",
+    fill: KT_COLOR_MAP[k.kt] || NAVY,
   }));
 
   const topStatesData = [...topStates].reverse().map((s) => ({
@@ -179,8 +193,8 @@ export default function AnalyticsDashboard() {
     value: s.count,
   }));
 
-  const topCustomersData = [...topCustomers].reverse().map((c) => ({
-    name: c.customer.length > 20 ? c.customer.slice(0, 20) + "…" : c.customer,
+  const topCustomersData = topCustomers.map((c) => ({
+    name: c.customer,
     value: c.qty,
   }));
 
@@ -197,12 +211,11 @@ export default function AnalyticsDashboard() {
   const goldByStatusData = statusCounts.map((s) => ({
     name: s.status.length > 16 ? s.status.slice(0, 16) + "…" : s.status,
     value: Math.round(s.goldWt || 0),
-    fill: STATUS_COLORS[s.status] || "#A0A8C9",
+    fill: STATUS_COLORS[s.status] || NAVY_MID,
   }));
 
   return (
     <div className="space-y-6">
-      {/* Metric Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard label="Total Orders" value={fmtNum(totalOrders)} sub={`${fmtNum(totalQty)} total qty`} />
         <MetricCard
@@ -214,7 +227,6 @@ export default function AnalyticsDashboard() {
         <MetricCard label="Unique Customers" value={fmtNum(uniqueCustomers)} sub={`across ${uniqueStates} states`} />
       </div>
 
-      {/* Order Status Donut + Karatage Bar */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <SectionCard title="Order Status (Qty)">
           <ResponsiveContainer width="100%" height={260}>
@@ -228,7 +240,6 @@ export default function AnalyticsDashboard() {
                 paddingAngle={2}
                 dataKey="value"
                 strokeWidth={0}
-                animationBegin={0}
                 animationDuration={800}
               >
                 {donutData.map((entry, i) => (
@@ -259,14 +270,13 @@ export default function AnalyticsDashboard() {
                 {karatageData.map((entry, i) => (
                   <Cell key={i} fill={entry.fill} />
                 ))}
-                <LabelList dataKey="value" position="top" style={{ fontSize: 11, fill: "#94a3b8", fontWeight: 400 }} formatter={fmtNum} />
+                <LabelList dataKey="value" position="top" style={{ fontSize: 11, fill: MUTED, fontWeight: 400 }} formatter={fmtNum} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </SectionCard>
       </div>
 
-      {/* Top States + Top Customers */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <SectionCard title="Top States by Orders">
           <ResponsiveContainer width="100%" height={280}>
@@ -275,36 +285,18 @@ export default function AnalyticsDashboard() {
               <XAxis type="number" tick={TICK} axisLine={false} tickLine={false} />
               <YAxis dataKey="name" type="category" width={110} tick={TICK_DARK} axisLine={false} tickLine={false} />
               <Tooltip content={<CustomTooltip />} cursor={{ fill: "#F8FAFC" }} />
-              <Bar dataKey="value" fill="#4E7BB5" radius={[0, 4, 4, 0]} name="Orders" animationDuration={800}>
-                <LabelList dataKey="value" position="right" style={{ fontSize: 11, fill: "#94a3b8", fontWeight: 400 }} formatter={fmtNum} />
+              <Bar dataKey="value" fill={NAVY} radius={[0, 4, 4, 0]} name="Orders" animationDuration={800}>
+                <LabelList dataKey="value" position="right" style={{ fontSize: 11, fill: MUTED, fontWeight: 400 }} formatter={fmtNum} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </SectionCard>
 
         <SectionCard title="Top Customers by Qty">
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={topCustomersData} layout="vertical" margin={{ top: 0, right: 48, bottom: 0, left: 12 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} />
-              <XAxis type="number" tick={TICK} axisLine={false} tickLine={false} />
-              <YAxis
-                dataKey="name"
-                type="category"
-                width={168}
-                tick={<CustomerAxisTick />}
-                axisLine={false}
-                tickLine={false}
-              />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: "#F8FAFC" }} />
-              <Bar dataKey="value" fill="#5BAFA8" radius={[0, 4, 4, 0]} name="Qty" animationDuration={800}>
-                <LabelList dataKey="value" position="right" style={{ fontSize: 11, fill: "#94a3b8", fontWeight: 400 }} formatter={fmtNum} />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <RankedQtyList items={topCustomersData} barColor={GOLD} />
         </SectionCard>
       </div>
 
-      {/* Collection Mix + Delivery Priority */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <SectionCard title="Collection Mix">
           <ResponsiveContainer width="100%" height={240}>
@@ -337,15 +329,14 @@ export default function AnalyticsDashboard() {
               <XAxis dataKey="name" tick={TICK_DARK} axisLine={false} tickLine={false} />
               <YAxis tick={TICK} axisLine={false} tickLine={false} />
               <Tooltip content={<CustomTooltip />} cursor={{ fill: "#F8FAFC" }} />
-              <Bar dataKey="value" fill="#9B8EC4" radius={[4, 4, 0, 0]} name="Orders" animationDuration={800}>
-                <LabelList dataKey="value" position="top" style={{ fontSize: 11, fill: "#94a3b8", fontWeight: 400 }} formatter={fmtNum} />
+              <Bar dataKey="value" fill={NAVY_MID} radius={[4, 4, 0, 0]} name="Orders" animationDuration={800}>
+                <LabelList dataKey="value" position="top" style={{ fontSize: 11, fill: MUTED, fontWeight: 400 }} formatter={fmtNum} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </SectionCard>
       </div>
 
-      {/* Order Type + Gold Weight by Status */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <SectionCard title="Order Type Breakdown">
           <div className="grid grid-cols-2 gap-3">
@@ -356,7 +347,7 @@ export default function AnalyticsDashboard() {
                 style={{ background: CHART_PALETTE[i % CHART_PALETTE.length] + "14" }}
               >
                 <p className="text-[10px] font-medium uppercase tracking-wider text-[#94a3b8]">{t.type}</p>
-                <p className="text-2xl font-semibold text-[#1e293b] mt-1">{fmtNum(t.count)}</p>
+                <p className="text-2xl font-semibold text-[#0D1B3E] mt-1">{fmtNum(t.count)}</p>
                 <p className="text-[10px] font-normal text-[#94a3b8] mt-0.5">{((t.count / totalOrders) * 100).toFixed(1)}% of total</p>
               </div>
             ))}
@@ -385,7 +376,7 @@ export default function AnalyticsDashboard() {
             ].map((m) => (
               <div key={m.label} className="bg-[#F8FAFC] rounded-lg p-2 text-center">
                 <p className="text-[10px] font-normal text-[#94a3b8]">{m.label}</p>
-                <p className="text-sm font-medium text-[#1e293b]">{m.val}</p>
+                <p className="text-sm font-medium text-[#0D1B3E]">{m.val}</p>
               </div>
             ))}
           </div>

@@ -343,17 +343,6 @@ body {
   overflow: hidden;
 }
 
-.operations-portal-light main .bg-white.border:not(button)::before,
-.vendor-portal-minimal main .bg-white.border:not(button)::before,
-.operations-portal-light main .vendor-surface::before,
-.vendor-portal-minimal main .vendor-surface::before {
-  content: "";
-  display: block;
-  height: 2px;
-  margin: -1px -1px 0;
-  background: linear-gradient(90deg, rgba(23, 37, 84, 0.58), rgba(201, 168, 76, 0.14), transparent);
-}
-
 .operations-portal-light nav button,
 .vendor-sidebar nav button {
   border: 1px solid transparent;

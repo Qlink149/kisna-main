@@ -1,4 +1,7 @@
-﻿const BASE = "/api";
+﻿import { filterWorkflowOrders } from "./mockStore.js";
+import { MOCK_ORDERS } from "../mocks/workflowData.js";
+
+const BASE = "/api";
 
 async function request(path, init) {
   const res = await fetch(`${BASE}${path}`, {
@@ -23,8 +26,9 @@ function toQuery(params = {}) {
   return s ? `?${s}` : "";
 }
 
+/** Workflow UIs use mock data only — never proxy live excel_orders here. */
 export const fetchOrders = (params = {}) =>
-  request(`/orders${toQuery(params)}`);
+  Promise.resolve(filterWorkflowOrders(MOCK_ORDERS, params));
 
 export const fetchOrderStats = () => request("/orders/stats");
 

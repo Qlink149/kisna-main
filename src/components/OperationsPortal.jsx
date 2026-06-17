@@ -2,14 +2,98 @@
 import { OrderStatus, PriorityLevel } from "../types.js";
 import {
   Bell, Search, Settings, Filter, Download,
-  CheckCircle2, XCircle, X, Truck, ArrowRight
+  CheckCircle2, XCircle, X, Truck, ArrowRight, RotateCcw, Check, X as XIcon
 } from "lucide-react";
 import AnalyticsDashboard from "./AnalyticsDashboard.jsx";
+import AiOperationsIntelligence from "./AiOperationsIntelligence.jsx";
 import NotificationPanel, { NotificationBell, categorizeNotification } from "./NotificationPanel.jsx";
-import { fetchAnalytics, fetchOrders, notifyWhatsApp, downloadOrdersExport, DEMO_VENDOR_NAME } from "../services/api.js";
+import { fetchAnalytics, notifyWhatsApp, downloadOrdersExport, DEMO_VENDOR_NAME } from "../services/api.js";
+import { filterWorkflowOrders, getSanitizedWorkflowOrders } from "../services/mockStore.js";
 
+const DEFAULT_QC_CHECKLIST = {
+  finishPolishing: null,
+  weightVerification: null,
+  hallmarkingCheck: null,
+  prongStability: null,
+};
+
+const QC_CHECKLIST_ITEMS = [
+  {
+    key: "finishPolishing",
+    title: "Finish & Mirror Polishing",
+    description: "Ensure no hairline micro incisions or polishing friction scars surface on exterior bands.",
+  },
+  {
+    key: "weightVerification",
+    title: "Weight Specification Clearance",
+    description: "Validate weights match design dispatch directives precisely (Permitted Tolerance +/- 0.05g).",
+  },
+  {
+    key: "hallmarkingCheck",
+    title: "BIS/916 Laser Hallmarking",
+    description: "Verify laser hallmark certification stamp has been embedded legibly on item inner sleeve.",
+  },
+  {
+    key: "prongStability",
+    title: "Prong Stability & Setting Force",
+    description: "Pressure-point validation. Diamonds and focal stones must remain perfectly stable without wiggle.",
+  },
+];
+
+function normalizeQcChecklist(raw) {
+  if (!raw) return { ...DEFAULT_QC_CHECKLIST };
+  const normalized = { ...DEFAULT_QC_CHECKLIST };
+  for (const key of Object.keys(DEFAULT_QC_CHECKLIST)) {
+    const value = raw[key];
+    if (value === "right" || value === "wrong") normalized[key] = value;
+    else if (value === true) normalized[key] = "right";
+    else normalized[key] = null;
+  }
+  return normalized;
+}
+
+function isQcChecklistComplete(checklist) {
+  return Object.values(checklist).every((value) => value === "right" || value === "wrong");
+}
+
+function QcResultToggle({ value, onChange }) {
+  return (
+    <div className="flex items-center gap-1.5 shrink-0">
+      <button
+        type="button"
+        onClick={() => onChange("right")}
+        aria-pressed={value === "right"}
+        className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide border transition-all ${
+          value === "right"
+            ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+            : "bg-white border-[#C6C6CF]/50 text-[#76767F] hover:border-emerald-400 hover:text-emerald-700"
+        }`}
+      >
+        <Check className="w-3 h-3" />
+        Right
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("wrong")}
+        aria-pressed={value === "wrong"}
+        className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide border transition-all ${
+          value === "wrong"
+            ? "bg-red-600 border-red-600 text-white shadow-sm"
+            : "bg-white border-[#C6C6CF]/50 text-[#76767F] hover:border-red-400 hover:text-red-700"
+        }`}
+      >
+        <XIcon className="w-3 h-3" />
+        Wrong
+      </button>
+    </div>
+  );
+}
 
 export default function OperationsPortal({
+  homeVendors = [],
+  homeActivities = [],
+  homeOrderStats = { total: 0 },
+  allWorkflowOrders = [],
   orders,
   orderStats = {},
   ordersMeta = { total: 0, page: 1, pages: 1, limit: 50 },
@@ -20,11 +104,11 @@ export default function OperationsPortal({
   setOrders,
   addActivity,
   onRefreshActivities,
-  onRefreshOrders,
   tab,
   setTab,
   onSwitchToVendorPortal,
   onOpenDemoVendorPortal,
+  onResetDemoData,
 }) {
   // Filters & State
   const [searchQuery, setSearchQuery] = useState(orderFilters.search || "");
@@ -46,12 +130,7 @@ export default function OperationsPortal({
 
   // QC Side Drawer Panel State
   const [reviewingOrder, setReviewingOrder] = useState(null);
-  const [qcChecklist, setQcChecklist] = useState({
-    finishPolishing: false,
-    weightVerification: false,
-    hallmarkingCheck: false,
-    prongStability: false,
-  });
+  const [qcChecklist, setQcChecklist] = useState({ ...DEFAULT_QC_CHECKLIST });
   const [remarks, setRemarks] = useState("");
   const [qcStoreNumber, setQcStoreNumber] = useState("");
   const [qcVendorNumber, setQcVendorNumber] = useState("");
@@ -62,20 +141,17 @@ export default function OperationsPortal({
   const [paymentStoreNumber, setPaymentStoreNumber] = useState("");
   const [paymentVendorNumber, setPaymentVendorNumber] = useState("");
 
+  const workflowOrdersSource = useMemo(
+    () => getSanitizedWorkflowOrders(allWorkflowOrders),
+    [allWorkflowOrders]
+  );
+
   const loadPaymentTabOrders = () => {
-    Promise.all([
-      fetchOrders({ status: "AWAITING_PAYMENT", limit: 100, page: 1 }),
-      fetchOrders({ status: "PAYMENT_OVERDUE", limit: 100, page: 1 }),
-      fetchOrders({ status: "DISPATCHED", limit: 100, page: 1 }),
-    ])
-      .then(([awaiting, overdue, dispatched]) => {
-        setPaymentPendingOrders([...awaiting.items, ...overdue.items]);
-        setDispatchedOrders(dispatched.items);
-      })
-      .catch(() => {
-        setPaymentPendingOrders([]);
-        setDispatchedOrders([]);
-      });
+    const awaiting = filterWorkflowOrders(workflowOrdersSource, { status: "AWAITING_PAYMENT", limit: 100, page: 1 });
+    const overdue = filterWorkflowOrders(workflowOrdersSource, { status: "PAYMENT_OVERDUE", limit: 100, page: 1 });
+    const dispatched = filterWorkflowOrders(workflowOrdersSource, { status: "DISPATCHED", limit: 100, page: 1 });
+    setPaymentPendingOrders([...awaiting.items, ...overdue.items]);
+    setDispatchedOrders(dispatched.items);
   };
 
   // Analytics data for AI insights
@@ -101,27 +177,27 @@ export default function OperationsPortal({
     onOrderFiltersChange?.({ ...orderFilters, page });
   };
 
-  const renderPaginationFooter = () => (
+  const renderPaginationFooter = (meta = ordersMeta) => (
     <div className="p-4 bg-[#EFF4FF] border-t border-[#C6C6CF]/25 flex flex-wrap gap-3 justify-between items-center text-xs text-[#76767F] font-semibold">
       <span>
-        Showing {ordersMeta.total === 0 ? 0 : (ordersMeta.page - 1) * ordersMeta.limit + 1}–
-        {Math.min(ordersMeta.page * ordersMeta.limit, ordersMeta.total)} of {ordersMeta.total.toLocaleString("en-IN")} orders
+        Showing {meta.total === 0 ? 0 : (meta.page - 1) * meta.limit + 1}–
+        {Math.min(meta.page * meta.limit, meta.total)} of {meta.total.toLocaleString("en-IN")} orders
       </span>
       <div className="flex gap-1.5 items-center">
         <button
           type="button"
           className="px-2 py-1 bg-white border border-[#C6C6CF]/20 rounded hover:bg-slate-50 disabled:opacity-40"
-          disabled={ordersMeta.page <= 1}
-          onClick={() => goToPage(ordersMeta.page - 1)}
+          disabled={meta.page <= 1}
+          onClick={() => goToPage(meta.page - 1)}
         >
           Prev
         </button>
-        <span className="px-2">Page {ordersMeta.page} / {ordersMeta.pages}</span>
+        <span className="px-2">Page {meta.page} / {meta.pages}</span>
         <button
           type="button"
           className="px-2 py-1 bg-white border border-[#C6C6CF]/20 rounded hover:bg-slate-50 disabled:opacity-40"
-          disabled={ordersMeta.page >= ordersMeta.pages}
-          onClick={() => goToPage(ordersMeta.page + 1)}
+          disabled={meta.page >= meta.pages}
+          onClick={() => goToPage(meta.page + 1)}
         >
           Next
         </button>
@@ -129,16 +205,48 @@ export default function OperationsPortal({
     </div>
   );
 
+  const workflowList = useMemo(
+    () => filterWorkflowOrders(workflowOrdersSource, orderFilters),
+    [workflowOrdersSource, orderFilters]
+  );
+
+  const workflowTableOrders = workflowList.items;
+  const workflowTableMeta = useMemo(() => {
+    const { items, ...meta } = workflowList;
+    return meta;
+  }, [workflowList]);
+
   const handleExport = async (extra = {}) => {
     setExporting(true);
     try {
-      await downloadOrdersExport({
-        search: orderFilters.search,
-        status: orderFilters.status,
-        excelStatus: orderFilters.excelStatus,
-        state: orderFilters.state,
-        ...extra,
-      });
+      if (tab === "home") {
+        await downloadOrdersExport({
+          search: orderFilters.search,
+          status: orderFilters.status,
+          excelStatus: orderFilters.excelStatus,
+          state: orderFilters.state,
+          ...extra,
+        });
+      } else {
+        const { items } = filterWorkflowOrders(workflowOrdersSource, {
+          search: orderFilters.search,
+          status: orderFilters.status,
+          excelStatus: orderFilters.excelStatus,
+          state: orderFilters.state,
+          limit: 10000,
+          page: 1,
+          ...extra,
+        });
+        const cols = ["id", "orderNo", "designNo", "customerName", "state", "status", "assignedVendor", "orderValue"];
+        const csv = [cols.join(","), ...items.map((o) => cols.map((c) => JSON.stringify(o[c] ?? "")).join(","))].join("\n");
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "kisna-workflow-orders.csv";
+        a.click();
+        URL.revokeObjectURL(url);
+      }
       showToast(`Exported orders to CSV.`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Export failed");
@@ -198,6 +306,12 @@ export default function OperationsPortal({
     }, 4000);
   };
 
+  const handleResetDemoData = async () => {
+    await onResetDemoData?.();
+    loadPaymentTabOrders();
+    showToast("Demo workflow data reset to default sample orders.");
+  };
+
   const showAlertToast = (message, sub = "") => {
     setAlertToast({ message, sub, visible: true });
     setTimeout(() => {
@@ -215,7 +329,15 @@ export default function OperationsPortal({
     setReviewingOrder(order);
     setQcStoreNumber(order.storeContactNumber || order.customerPhone || "");
     setQcVendorNumber(order.vendorContactNumber || "");
+    setQcChecklist(normalizeQcChecklist(order.qcChecklist));
+    setRemarks(order.qcRemarks || "");
   };
+
+  const setQcChecklistItem = (key, result) => {
+    setQcChecklist((prev) => ({ ...prev, [key]: result }));
+  };
+
+  const qcChecklistComplete = isQcChecklistComplete(qcChecklist);
 
   // Handlers
   const handleAssignVendorSubmit = () => {
@@ -274,9 +396,13 @@ export default function OperationsPortal({
   };
 
   const handleQCPass = (orderId) => {
-    const order = orders.find((o) => o.id === orderId);
+    const order = workflowOrdersSource.find((o) => o.id === orderId);
     const storePhone = qcStoreNumber || order?.storeContactNumber || order?.customerPhone || "";
     const vendorPhone = qcVendorNumber || order?.vendorContactNumber || "";
+    if (!isQcChecklistComplete(qcChecklist)) {
+      showToast("Complete every checklist item — select Right or Wrong for each row.");
+      return;
+    }
     if (!storePhone && !vendorPhone) {
       showToast("Enter store and/or vendor WhatsApp numbers before marking QC passed.");
       return;
@@ -320,9 +446,13 @@ export default function OperationsPortal({
   };
 
   const handleQCFail = (orderId) => {
-    const order = orders.find((o) => o.id === orderId);
+    const order = workflowOrdersSource.find((o) => o.id === orderId);
     const storePhone = qcStoreNumber || order?.storeContactNumber || order?.customerPhone || "";
     const vendorPhone = qcVendorNumber || order?.vendorContactNumber || "";
+    if (!isQcChecklistComplete(qcChecklist)) {
+      showToast("Complete every checklist item — select Right or Wrong for each row.");
+      return;
+    }
     if (!storePhone && !vendorPhone) {
       showToast("Enter store and/or vendor WhatsApp numbers before flagging audit failed.");
       return;
@@ -366,7 +496,7 @@ export default function OperationsPortal({
   };
 
   const handleConfirmPayment = (orderId) => {
-    const order = orders.find((o) => o.id === orderId) || paymentPendingOrders.find((o) => o.id === orderId);
+    const order = workflowOrdersSource.find((o) => o.id === orderId) || paymentPendingOrders.find((o) => o.id === orderId);
     if (!order) return;
     setPaymentConfirmOrder(order);
     setPaymentStoreNumber(order.storeContactNumber || order.customerPhone || "");
@@ -445,23 +575,31 @@ export default function OperationsPortal({
     showToast(`Order ${orderId} returned to unassigned operations queue.`);
   };
 
-  // Dynamic Metrics from MongoDB stats
-  const pendingAssignmentCount = (orderStats.unassigned ?? 0) + (orderStats.pendingVendorReview ?? 0);
-  const activeProductionCount = orderStats.inProduction ?? 0;
-  const pendingQCCount = orderStats.pendingQC ?? 0;
-  const awaitingPaymentCount = orderStats.awaitingPayment ?? 0;
-  const dispatchedCount = orderStats.dispatched ?? 0;
-  const totalOrdersCount = orderStats.total ?? ordersMeta.total ?? 0;
+  const isHome = tab === "home";
+  const activeVendors = isHome ? homeVendors : vendors;
+  const activeOrderStats = isHome ? homeOrderStats : orderStats;
+
+  const pendingAssignmentCount = (activeOrderStats.unassigned ?? 0) + (activeOrderStats.pendingVendorReview ?? 0);
+  const activeProductionCount = activeOrderStats.inProduction ?? 0;
+  const pendingQCCount = activeOrderStats.pendingQC ?? 0;
+  const awaitingPaymentCount = activeOrderStats.awaitingPayment ?? 0;
+  const dispatchedCount = activeOrderStats.dispatched ?? 0;
+  const totalOrdersCount = isHome
+    ? (analyticsData?.totalOrders ?? homeOrderStats.total ?? 0)
+    : (orderStats.total ?? ordersMeta.total ?? 0);
+  const workflowPendingAssignment = (orderStats.unassigned ?? 0) + (orderStats.pendingVendorReview ?? 0);
+  const workflowPendingQC = orderStats.pendingQC ?? 0;
+  const workflowAwaitingPayment = orderStats.awaitingPayment ?? 0;
   const totalGoldWeight = analyticsData?.totalGoldWeight ?? 0;
   const workbookStatusCounts = analyticsData?.statusCounts?.reduce((acc, row) => {
     acc[row.status] = row.qty;
     return acc;
   }, {}) ?? {};
 
-  const filteredOrders = orders;
+  const filteredOrders = workflowTableOrders;
 
   const sortedVendors = useMemo(() => {
-    const list = [...vendors];
+    const list = [...activeVendors];
     list.sort((a, b) => {
       if (a.isDemo && !b.isDemo) return -1;
       if (!a.isDemo && b.isDemo) return 1;
@@ -480,7 +618,7 @@ export default function OperationsPortal({
       });
     }
     return list;
-  }, [vendors]);
+  }, [activeVendors]);
 
   const actionTabForActivity = (act) => {
     const cat = act.category || categorizeNotification(act);
@@ -501,54 +639,60 @@ export default function OperationsPortal({
     );
 
   const opsNotifications = useMemo(() => {
+    const wfAssign = (orderStats.unassigned ?? 0) + (orderStats.pendingVendorReview ?? 0);
+    const wfProduction = orderStats.inProduction ?? 0;
+    const wfQC = orderStats.pendingQC ?? 0;
+    const wfPayment = orderStats.awaitingPayment ?? 0;
+    const wfDispatch = orderStats.dispatched ?? 0;
+
     const queue = [];
-    if (pendingAssignmentCount > 0) {
+    if (wfAssign > 0) {
       queue.push({
         id: "sys-assign",
         category: "Assignment",
-        title: `${pendingAssignmentCount.toLocaleString("en-IN")} orders need vendor assignment`,
-        description: "Excel status: Pending from Vendor — allocate workshops in Orders tab.",
-        time: "Live",
+        title: `${wfAssign.toLocaleString("en-IN")} orders need vendor assignment`,
+        description: "Allocate workshops in the Orders tab.",
+        time: "Now",
         actionTab: "assignment",
       });
     }
-    if (activeProductionCount > 0) {
+    if (wfProduction > 0) {
       queue.push({
         id: "sys-production",
         category: "Production",
-        title: `${activeProductionCount.toLocaleString("en-IN")} orders in workshop production`,
-        description: "God WIP / GOD WIP / inter-store transfer pipeline.",
-        time: "Live",
+        title: `${wfProduction.toLocaleString("en-IN")} orders in workshop production`,
+        description: "Active fabrication and finishing pipeline.",
+        time: "Now",
         actionTab: "assignment",
       });
     }
-    if (pendingQCCount > 0) {
+    if (wfQC > 0) {
       queue.push({
         id: "sys-qc",
         category: "QC",
-        title: `${pendingQCCount.toLocaleString("en-IN")} orders in QC queue`,
-        description: 'Excel "Ready For Dispatch" rows — audit before payment release.',
-        time: "Live",
+        title: `${wfQC.toLocaleString("en-IN")} orders in QC queue`,
+        description: "Audit before payment release.",
+        time: "Now",
         actionTab: "qc",
       });
     }
-    if (awaitingPaymentCount > 0) {
+    if (wfPayment > 0) {
       queue.push({
         id: "sys-payment",
         category: "Payment",
-        title: `${awaitingPaymentCount.toLocaleString("en-IN")} orders awaiting payment`,
-        description: "Only orders that passed QC in the portal appear here (not all Excel rows).",
-        time: "Live",
+        title: `${wfPayment.toLocaleString("en-IN")} orders awaiting payment`,
+        description: "Confirm clearance before dispatch.",
+        time: "Now",
         actionTab: "payment",
       });
     }
-    if (dispatchedCount > 0) {
+    if (wfDispatch > 0) {
       queue.push({
         id: "sys-dispatch",
         category: "Dispatch",
-        title: `${dispatchedCount.toLocaleString("en-IN")} dispatched shipments`,
+        title: `${wfDispatch.toLocaleString("en-IN")} dispatched shipments`,
         description: "Payment cleared and logistics handoff recorded.",
-        time: "Live",
+        time: "Now",
         actionTab: "payment",
       });
     }
@@ -573,20 +717,13 @@ export default function OperationsPortal({
       }));
 
     return [...queue, ...vendorAlerts, ...activityItems];
-  }, [
-    pendingAssignmentCount,
-    activeProductionCount,
-    pendingQCCount,
-    awaitingPaymentCount,
-    dispatchedCount,
-    activities,
-  ]);
+  }, [orderStats, activities]);
 
   const notificationCount = opsNotifications.length;
 
   // Detect new vendor events and push an alert to the admin
   useEffect(() => {
-    if (!activities.length) return;
+    if (isHome || !activities.length) return;
     const newestId = activities[0]?.id;
     if (latestActivityIdRef.current === null) {
       latestActivityIdRef.current = newestId;
@@ -607,7 +744,7 @@ export default function OperationsPortal({
         else           showAlertToast(newest.title, sub);
       }
     }
-  }, [activities]);
+  }, [activities, isHome]);
 
   useEffect(() => {
     if (tab === "payment") {
@@ -625,7 +762,7 @@ export default function OperationsPortal({
       });
       if (tab === "assignment") setSearchQuery("");
     }
-  }, [tab]);
+  }, [tab, workflowOrdersSource]);
 
   return (
     <div className="operations-portal-light flex h-[100dvh] font-sans antialiased text-[#0B1C30] overflow-hidden">
@@ -640,8 +777,8 @@ export default function OperationsPortal({
                 <span className="font-mono text-xl font-black text-[#C9A84C] tracking-wide">K1</span>
               </div>
               <div>
-                <h1 className="text-xl font-bold tracking-tight text-white leading-none">KISNA ONE</h1>
-                <p className="text-xs text-[#C9A84C]/60 mt-1 uppercase tracking-widest font-semibold">Operations Control</p>
+                <h1 className="text-lg font-bold tracking-tight text-white leading-snug">Sales and Support</h1>
+                <p className="text-xs text-[#C9A84C]/70 mt-1 uppercase tracking-widest font-semibold">Dashboard</p>
               </div>
             </div>
           </div>
@@ -675,9 +812,9 @@ export default function OperationsPortal({
                 <span className="material-symbols-outlined text-[20px] fill-current">assignment_ind</span>
                 <span className="text-sm">Orders</span>
               </div>
-              {pendingAssignmentCount > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-red-600 text-white font-bold animate-pulse">
-                  {pendingAssignmentCount}
+              {workflowPendingAssignment > 0 && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-[#C9A84C]/20 text-[#C9A84C] font-bold">
+                  {workflowPendingAssignment}
                 </span>
               )}
             </button>
@@ -694,9 +831,9 @@ export default function OperationsPortal({
                 <span className="material-symbols-outlined text-[20px]">fact_check</span>
                 <span className="text-sm">QC Review Bureau</span>
               </div>
-              {pendingQCCount > 0 && (
+              {workflowPendingQC > 0 && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-[#C9A84C] text-[#0D1B3E] font-bold">
-                  {pendingQCCount}
+                  {workflowPendingQC}
                 </span>
               )}
             </button>
@@ -713,9 +850,9 @@ export default function OperationsPortal({
                 <span className="material-symbols-outlined text-[20px]">payments</span>
                 <span className="text-sm">Payment &amp; Dispatch</span>
               </div>
-              {awaitingPaymentCount > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500 text-black font-bold">
-                  {awaitingPaymentCount}
+              {workflowAwaitingPayment > 0 && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-[#0D1B3E] text-[#C9A84C] font-bold">
+                  {workflowAwaitingPayment}
                 </span>
               )}
             </button>
@@ -804,8 +941,8 @@ export default function OperationsPortal({
           <div className="flex items-center gap-6">
             <div className="text-right">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-500 animate-ping"></span>
-                <p className="text-sm font-semibold text-[#0B1C30] leading-none">Ops Management Terminal</p>
+                <span className="w-2 h-2 rounded-full bg-[#C9A84C] animate-pulse"></span>
+                <p className="text-sm font-semibold text-[#0D1B3E] leading-none">Sales and Support Dashboard</p>
               </div>
               <p className="text-xs text-[#76767F]/80 mt-1 font-mono">UTC: 2026-06-11 10:00</p>
             </div>
@@ -849,9 +986,13 @@ export default function OperationsPortal({
               {/* Header block */}
               <div className="flex justify-between items-end">
                 <div>
-                  <p className="text-xs uppercase tracking-widest font-mono text-[#C9A84C] font-bold">FRN / CRV MASTER DASHBOARD</p>
-                  <h2 className="text-3xl font-black text-[#0D1B3E] mt-1">Operations Analytics</h2>
-                  <p className="text-[#45464E] text-sm mt-1">Live aggregates from the running-order workbook — 2,118 orders across India.</p>
+                  <p className="text-xs uppercase tracking-widest font-mono text-[#C9A84C] font-bold">Live workbook insights</p>
+                  <h2 className="text-3xl font-black text-[#0D1B3E] mt-1">Sales and Support Dashboard</h2>
+                  <p className="text-[#45464E] text-sm mt-1">
+                    {analyticsData?.totalOrders
+                      ? `${analyticsData.totalOrders.toLocaleString("en-IN")} orders across ${analyticsData.uniqueStates ?? 0} states — live from MongoDB.`
+                      : "Live aggregates from the running-order workbook."}
+                  </p>
                 </div>
                 <button
                   onClick={() => handleExport()}
@@ -866,179 +1007,7 @@ export default function OperationsPortal({
               {/* Analytics from Excel workbook */}
               <AnalyticsDashboard />
 
-              {/* AI Operations Intelligence */}
-              {analyticsData && analyticsData.totalOrders > 0 && (
-                <div className="bg-white border border-[#C6C6CF]/30 rounded-2xl p-6">
-                  <div className="flex items-center gap-2 mb-5">
-                    <div className="p-1.5 bg-[#0D1B3E] rounded-lg">
-                      <span className="material-symbols-outlined text-[16px] text-[#C9A84C]">psychology</span>
-                    </div>
-                    <h3 className="font-bold text-base text-[#0D1B3E]">AI Operations Intelligence</h3>
-                    <span className="ml-auto text-[9px] bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Live Data</span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {[
-                      {
-                        icon: "location_on",
-                        color: "#3266ad",
-                        bg: "#EFF4FF",
-                        title: `${analyticsData.topStates?.[0]?.state || "N/A"} leads order volume`,
-                        body: `${analyticsData.topStates?.[0]?.count || 0} orders (${((( analyticsData.topStates?.[0]?.count || 0) / analyticsData.totalOrders) * 100).toFixed(1)}% of total) — highest demand state in network`,
-                      },
-                      {
-                        icon: "diamond",
-                        color: "#C9A84C",
-                        bg: "#FDF8EC",
-                        title: `${analyticsData.karatage?.[0]?.kt || "22KT"} dominates karatage mix`,
-                        body: `${(analyticsData.karatage?.[0]?.count || 0).toLocaleString("en-IN")} orders in top category — ${((( analyticsData.karatage?.[0]?.count || 0) / analyticsData.totalOrders) * 100).toFixed(1)}% market share`,
-                      },
-                      {
-                        icon: "scale",
-                        color: "#1d9e75",
-                        bg: "#EDFAF4",
-                        title: `${((analyticsData.totalGoldWeight || 0) / 1000).toFixed(2)} kg gold committed`,
-                        body: `Avg ${((analyticsData.totalGoldWeight || 0) / (analyticsData.totalOrders || 1)).toFixed(2)} gm/order across ${(analyticsData.totalOrders || 0).toLocaleString("en-IN")} workbook orders`,
-                      },
-                      {
-                        icon: "groups",
-                        color: "#534ab7",
-                        bg: "#F3F0FF",
-                        title: `${(analyticsData.uniqueCustomers || 0).toLocaleString("en-IN")} retail partners active`,
-                        body: `Nationwide reach across ${analyticsData.uniqueStates || 0} states — top customer: ${analyticsData.topCustomers?.[0]?.customer || "N/A"}`,
-                      },
-                    ].map((insight) => (
-                      <div key={insight.title} className="flex gap-3 p-4 rounded-xl border border-[#C6C6CF]/20" style={{ background: insight.bg }}>
-                        <div className="p-2 rounded-lg shrink-0" style={{ background: insight.color + "22" }}>
-                          <span className="material-symbols-outlined text-[18px]" style={{ color: insight.color }}>{insight.icon}</span>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-xs text-[#0D1B3E] leading-snug truncate">{insight.title}</p>
-                          <p className="text-[11px] text-[#76767F] mt-0.5 leading-snug">{insight.body}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Executive Leadership */}
-              <div className="bg-white border border-[#C6C6CF]/30 p-6 rounded-2xl">
-                <h3 className="font-bold text-base text-[#0D1B3E] mb-4">Executive Leadership</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Virtual CEO */}
-                  <div className="flex items-center gap-4 p-4 rounded-xl border border-[#C9A84C]/20 bg-gradient-to-r from-[#FDF8EC] to-white">
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center font-extrabold text-white text-base shrink-0"
-                      style={{ background: "linear-gradient(135deg, #C9A84C, #A07830)" }}>
-                      VJ
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-bold text-sm text-[#0D1B3E] truncate">Vikram Jaiswal</p>
-                      <p className="text-[11px] text-[#76767F]">Chief Executive Officer</p>
-                      <span className="text-[9px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">
-                        Strategic Advisory — Non-Operational
-                      </span>
-                    </div>
-                    <span className="ml-auto text-[10px] text-[#76767F] bg-gray-100 px-2 py-1 rounded-full font-bold shrink-0">Offline</span>
-                  </div>
-                  {/* Operations Manager */}
-                  <div className="flex items-center gap-4 p-4 rounded-xl border border-[#C6C6CF]/20 bg-[#F8F9FB]">
-                    <div className="w-12 h-12 rounded-full bg-[#C9A84C]/20 flex items-center justify-center font-extrabold text-[#C9A84C] text-base shrink-0">
-                      OM
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-bold text-sm text-[#0D1B3E] truncate">Operations Manager</p>
-                      <p className="text-[11px] text-[#76767F]">Head of Operations</p>
-                      <span className="text-[9px] bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">
-                        Active — Online
-                      </span>
-                    </div>
-                    <span className="ml-auto text-[10px] text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded-full font-bold shrink-0">Online</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Activity feed + vendor snapshot */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-                <div className="bg-white border border-[#C6C6CF]/30 p-6 rounded-2xl">
-                  <h3 className="font-bold text-base text-[#0D1B3E] mb-6">Recent Operations Activity</h3>
-                  <div className="relative pl-6 space-y-6 before:content-[‘’] before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-gray-100">
-                    {activities.map((act) => (
-                      <div key={act.id} className="relative">
-                        <span className={`absolute -left-[23px] top-1 w-3.5 h-3.5 rounded-full border-4 border-white ${
-                          act.type === "success" ? "bg-green-500" :
-                          act.type === "error" ? "bg-red-500" :
-                          act.type === "warning" ? "bg-[#C9A84C]" : "bg-[#0D1B3E]"
-                        }`} />
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="text-xs font-bold text-[#0D1B3E]">{act.title}</p>
-                            <p className="text-[10px] text-[#76767F] mt-0.5">{act.description}</p>
-                          </div>
-                          <span className="font-mono text-[9px] text-[#76767F] font-bold">{act.time}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-white border border-[#C6C6CF]/30 p-6 rounded-2xl">
-                  <div className="flex justify-between items-center mb-6">
-                    <h3 className="font-bold text-base text-[#0D1B3E]">Vendor Network Status</h3>
-                    <button onClick={() => setTab("assignment")} className="text-xs text-[#C9A84C] font-bold hover:underline">Manage Load</button>
-                  </div>
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-gray-100 text-[#76767F] font-semibold">
-                        <th className="pb-3">Vendor</th>
-                        <th className="pb-3">Capacity</th>
-                        <th className="pb-3">Status</th>
-                        <th className="pb-3">TAT</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {sortedVendors.map((vendor) => (
-                        <tr
-                          key={vendor.id}
-                          onClick={() => {
-                            if (vendor.isDemo) onOpenDemoVendorPortal?.("dashboard");
-                            else onSwitchToVendorPortal?.(vendor.name, "active");
-                          }}
-                          className="hover:bg-slate-50 transition-colors cursor-pointer"
-                          title={`Open ${vendor.name} vendor dashboard`}
-                        >
-                          <td className="py-3 font-bold text-[#0B1C30]">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="w-5 h-5 rounded-full bg-[#C9A84C]/20 text-[#C9A84C] text-[9px] font-black flex items-center justify-center shrink-0">
-                                {vendor.name.slice(0, 1)}
-                              </span>
-                              <span className="break-words">{vendor.name}</span>
-                              {vendor.isDemo && (
-                                <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">Demo</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3">
-                            <div className="flex items-center gap-2 max-w-[100px]">
-                              <div className="flex-1 h-1.5 bg-[#EFF4FF] rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full ${vendor.capacity > 90 ? "bg-red-500" : vendor.capacity > 70 ? "bg-amber-500" : "bg-green-500"}`} style={{ width: `${vendor.capacity}%` }} />
-                              </div>
-                              <span className="font-mono text-[10px] text-[#76767F] font-bold">{vendor.capacity}%</span>
-                            </div>
-                          </td>
-                          <td className="py-3">
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${vendor.status === "Optimal" ? "bg-green-50 text-green-700" : vendor.status === "Warning" ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`}>
-                              {vendor.status}
-                            </span>
-                          </td>
-                          <td className="py-3 font-mono text-[#0D1B3E] font-bold">{vendor.tat}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-              </div>
+              <AiOperationsIntelligence onResetDemoData={handleResetDemoData} />
 
             </div>
           )}
@@ -1051,7 +1020,9 @@ export default function OperationsPortal({
               <div className="flex justify-between items-end">
                 <div>
                   <h2 className="text-2xl font-black text-[#0D1B3E]">All Orders</h2>
-                  <p className="text-sm text-[#45464E] mt-1">Complete view of all orders across every workflow status — assign, QC, dispatch, and payment stages.</p>
+                  <p className="text-sm text-[#45464E] mt-1">
+                    Demo workflow data — {workflowOrdersSource.length} sample orders for assignment, QC, payment, and dispatch.
+                  </p>
                 </div>
                 <div className="flex gap-2.5 flex-wrap">
                   <button
@@ -1068,6 +1039,14 @@ export default function OperationsPortal({
                   >
                     <Download className="w-4 h-4 text-[#C9A84C]" />
                     <span>{exporting ? "Exporting…" : "Export All"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetDemoData}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-white border border-[#C6C6CF]/40 text-[#0B1C30] rounded-xl font-bold text-sm hover:bg-[#F8F9FF] transition-all"
+                  >
+                    <RotateCcw className="w-4 h-4 text-[#C9A84C]" />
+                    <span>Reset Demo Data</span>
                   </button>
                 </div>
               </div>
@@ -1282,7 +1261,7 @@ export default function OperationsPortal({
                   </table>
                 </div>
 
-                {renderPaginationFooter()}
+                {renderPaginationFooter(workflowTableMeta)}
               </div>
 
             </div>
@@ -1360,7 +1339,7 @@ export default function OperationsPortal({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {orders.map((order) => (
+                      {workflowTableOrders.map((order) => (
                         <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="p-4 px-6 font-mono font-bold text-[#0D1B3E]">{order.id}</td>
                           <td className="p-4">
@@ -1393,20 +1372,7 @@ export default function OperationsPortal({
                           </td>
                           <td className="p-4 text-right px-6">
                             <button
-                              onClick={() => {
-                                openQCReviewDrawer(order);
-                                if (order.qcChecklist) {
-                                  setQcChecklist({ ...order.qcChecklist });
-                                } else {
-                                  setQcChecklist({
-                                    finishPolishing: false,
-                                    weightVerification: false,
-                                    hallmarkingCheck: false,
-                                    prongStability: false,
-                                  });
-                                }
-                                setRemarks(order.qcRemarks || "");
-                              }}
+                              onClick={() => openQCReviewDrawer(order)}
                               className="px-4 py-1.5 border border-secondary text-secondary font-bold text-xs rounded-lg hover:bg-secondary/5 transition-colors cursor-pointer"
                             >
                               Review Order Audits
@@ -1417,7 +1383,7 @@ export default function OperationsPortal({
                     </tbody>
                   </table>
                 </div>
-                {renderPaginationFooter()}
+                {renderPaginationFooter(workflowTableMeta)}
               </div>
 
             </div>
@@ -1670,18 +1636,28 @@ export default function OperationsPortal({
                     </p>
                   </div>
 
-                  <div className="pt-6 mt-6 border-t border-slate-100 flex items-center justify-between">
+                  <div className="pt-6 mt-6 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
                     <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Demo vendor: Demo Workshop Surat</span>
-                    <button 
-                      onClick={() => {
-                        onOpenDemoVendorPortal?.("dashboard");
-                        showToast("Demo vendor portal seeded and opened.");
-                      }}
-                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
-                    >
-                      <span>Demo Vendor Portal</span>
-                      <ArrowRight className="w-3.5 h-3.5 text-[#C9A84C]" />
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleResetDemoData}
+                        className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-[#0B1C30] font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-[#C9A84C]" />
+                        <span>Reset Demo Data</span>
+                      </button>
+                      <button 
+                        onClick={() => {
+                          onOpenDemoVendorPortal?.("dashboard");
+                          showToast("Demo vendor portal seeded and opened.");
+                        }}
+                        className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
+                      >
+                        <span>Demo Vendor Portal</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-[#C9A84C]" />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -2007,61 +1983,42 @@ export default function OperationsPortal({
 
                 {/* Audit Checklist Form */}
                 <div className="space-y-3">
-                  <label className="text-xs font-bold text-[#76767F] uppercase tracking-wider block">Bureau QC Checklist</label>
-                  <div className="p-4 bg-[#EFF4FF]/50 border border-[#C6C6CF]/20 rounded-2xl space-y-3.5">
-                    
-                    <label className="flex items-start gap-3.5 p-3 hover:bg-white hover:shadow-sm border border-transparent hover:border-[#C6C6CF]/20 rounded-xl cursor-pointer transition-all">
-                      <input 
-                        type="checkbox"
-                        checked={qcChecklist.finishPolishing}
-                        onChange={(e) => setQcChecklist({ ...qcChecklist, finishPolishing: e.target.checked })} 
-                        className="w-5 h-5 rounded text-[#0D1B3E] focus:ring-[#C9A84C] border-gray-300 mt-0.5"
-                      />
-                      <div>
-                        <p className="text-xs font-bold text-[#0D1B3E]">Finish &amp; Mirror Polishing</p>
-                        <p className="text-[10px] text-[#76767F] italic leading-tight mt-0.5">Ensure no hairline micro incisions or polishing friction scars surface on exterior bands.</p>
-                      </div>
-                    </label>
-
-                    <label className="flex items-start gap-3.5 p-3 hover:bg-white hover:shadow-sm border border-transparent hover:border-[#C6C6CF]/20 rounded-xl cursor-pointer transition-all">
-                      <input 
-                        type="checkbox" 
-                        checked={qcChecklist.weightVerification}
-                        onChange={(e) => setQcChecklist({ ...qcChecklist, weightVerification: e.target.checked })}
-                        className="w-5 h-5 rounded text-[#0D1B3E] focus:ring-[#C9A84C] border-gray-300 mt-0.5"
-                      />
-                      <div>
-                        <p className="text-xs font-bold text-[#0D1B3E]">Weight Specification Clearance</p>
-                        <p className="text-[10px] text-[#76767F] italic leading-tight mt-0.5">Validate weights match design dispatch directives precisely (Permitted Tolerance +/- 0.05g).</p>
-                      </div>
-                    </label>
-
-                    <label className="flex items-start gap-3.5 p-3 hover:bg-white hover:shadow-sm border border-transparent hover:border-[#C6C6CF]/20 rounded-xl cursor-pointer transition-all">
-                      <input 
-                        type="checkbox"
-                        checked={qcChecklist.hallmarkingCheck}
-                        onChange={(e) => setQcChecklist({ ...qcChecklist, hallmarkingCheck: e.target.checked })} 
-                        className="w-5 h-5 rounded text-[#0D1B3E] focus:ring-[#C9A84C] border-gray-300 mt-0.5"
-                      />
-                      <div>
-                        <p className="text-xs font-bold text-[#0D1B3E]">BIS/916 Laser Hallmarking</p>
-                        <p className="text-[10px] text-[#76767F] italic leading-tight mt-0.5">Verify laser hallmark certification stamp has been embedded legibly on item inner sleeve.</p>
-                      </div>
-                    </label>
-
-                    <label className="flex items-start gap-3.5 p-3 hover:bg-white hover:shadow-sm border border-transparent hover:border-[#C6C6CF]/20 rounded-xl cursor-pointer transition-all">
-                      <input 
-                        type="checkbox"
-                        checked={qcChecklist.prongStability}
-                        onChange={(e) => setQcChecklist({ ...qcChecklist, prongStability: e.target.checked })} 
-                        className="w-5 h-5 rounded text-[#0D1B3E] focus:ring-[#C9A84C] border-gray-300 mt-0.5"
-                      />
-                      <div>
-                        <p className="text-xs font-bold text-[#0D1B3E]">Prong Stability &amp; Setting Force</p>
-                        <p className="text-[10px] text-[#76767F] italic leading-tight mt-0.5">Pressure-point validation. Diamonds and focal stones must remain perfectly stable without wiggle.</p>
-                      </div>
-                    </label>
-
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-xs font-bold text-[#76767F] uppercase tracking-wider block">Bureau QC Checklist</label>
+                    {!qcChecklistComplete && (
+                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                        All rows required
+                      </span>
+                    )}
+                  </div>
+                  <div className="bg-[#EFF4FF]/50 border border-[#C6C6CF]/20 rounded-2xl overflow-hidden">
+                    <div className="grid grid-cols-[1fr_auto] gap-3 px-4 py-2.5 bg-white/70 border-b border-[#C6C6CF]/20 text-[10px] font-bold uppercase tracking-wider text-[#76767F]">
+                      <span>Inspection criterion</span>
+                      <span className="text-right pr-1">
+                        Result <span className="text-red-500">*</span>
+                      </span>
+                    </div>
+                    <div className="divide-y divide-[#C6C6CF]/15">
+                      {QC_CHECKLIST_ITEMS.map((item) => (
+                        <div
+                          key={item.key}
+                          className={`grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 p-4 transition-colors ${
+                            qcChecklist[item.key] ? "bg-white" : "bg-[#FFF8F0]/40"
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-[#0D1B3E]">{item.title}</p>
+                            <p className="text-[10px] text-[#76767F] italic leading-tight mt-0.5">{item.description}</p>
+                          </div>
+                          <div className="flex sm:justify-end sm:items-center">
+                            <QcResultToggle
+                              value={qcChecklist[item.key]}
+                              onChange={(result) => setQcChecklistItem(item.key, result)}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -2084,6 +2041,7 @@ export default function OperationsPortal({
                 <button
                   onClick={() => handleQCFail(reviewingOrder.id)}
                   disabled={
+                    !qcChecklistComplete ||
                     !(
                       (qcStoreNumber || reviewingOrder?.storeContactNumber || reviewingOrder?.customerPhone) ||
                       (qcVendorNumber || reviewingOrder?.vendorContactNumber)
@@ -2097,6 +2055,7 @@ export default function OperationsPortal({
                 <button
                   onClick={() => handleQCPass(reviewingOrder.id)}
                   disabled={
+                    !qcChecklistComplete ||
                     !(
                       (qcStoreNumber || reviewingOrder?.storeContactNumber || reviewingOrder?.customerPhone) ||
                       (qcVendorNumber || reviewingOrder?.vendorContactNumber)
