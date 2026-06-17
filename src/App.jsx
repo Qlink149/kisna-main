@@ -131,9 +131,11 @@ export default function App() {
     setPerspective("vendor");
   }, []);
 
-  const loadDashboard = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadDashboard = useCallback(async ({ showLoader = true } = {}) => {
+    if (showLoader) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const [v, a, stats] = await Promise.all([
         fetchVendors(),
@@ -144,13 +146,19 @@ export default function App() {
       setDashboardActivities(a);
       setDashboardOrderStats(stats);
     } catch (err) {
-      setError(
+      const message =
         err instanceof Error
           ? err.message
-          : "Could not reach the API. Is the FastAPI server running on :8080?"
-      );
+          : "Could not reach the API. Is the FastAPI server running on :8080?";
+      if (showLoader) {
+        setError(message);
+      } else {
+        console.warn("Dashboard background refresh failed", message);
+      }
     } finally {
-      setLoading(false);
+      if (showLoader) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -290,7 +298,7 @@ export default function App() {
               setOrders={setWorkflowOrders}
               addActivity={addWorkflowActivity}
               onRefreshActivities={refreshDashboardActivities}
-              onRefreshOrders={loadDashboard}
+              onRefreshOrders={() => loadDashboard({ showLoader: false })}
               tab={operationsTab}
               setTab={setOperationsTab}
               onSwitchToVendorPortal={openVendorPortal}
